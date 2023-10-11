@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MetaMask Auth and Deposit Example</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #f7f7f7;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="authButton" onclick="authenticate()">
+      Login with MetaMask
+    </button>
+
+    <div id="depositSection" style="display: none">
+      <input type="text" id="ethAmount" placeholder="Количество эфира" />
+      <button id="depositButton" onclick="depositETH()">Deposit ETH</button>
+    </div>
+
+    <script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js"></script>
+    <script>
+      let signer;
+
+      async function authenticate() {
+        const { ethereum } = window;
+        if (!ethereum || !ethereum.isMetaMask) {
+          alert("Please install MetaMask.");
+          return;
+        }
+
+        const chainId = 1;
+        if (Number(window.ethereum.networkVersion) !== chainId) {
+          alert("Please change network");
+
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [
+              {
+                chainId: "0x" + chainId.toString(16),
+              },
+            ],
+          });
+        }
+
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        signer = provider.getSigner();
+
+        const signerAddress = await signer.getAddress();
+
+        const response = await fetch(`/get-nonce/${signerAddress}`);
+        const data = await response.json();
+        const nonce = data.nonce;
+
+        const message = `I am ${signerAddress} signing my one-time nonce: ${nonce}`;
+        const signature = await signer.signMessage(message);
+
+        fetch("/auth", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ signerAddress, signature }),
+        })
+          .then((res) => res.text())
+          .then((responseText) => {
+            alert(responseText);
+            document.getElementById("authButton").style.display = "none";
+            document.getElementById("depositSection").style.display = "block";
+          });
+
+        const ethAmount = document.getElementById("ethAmount").value;
+        if (!ethAmount || isNaN(ethAmount)) {
+          alert("Введите действительное количество эфира.");
+          return;
+        }
+      }
+
+      async function depositETH() {
+        if (!signer) {
+          alert("Please authenticate first.");
+          return;
+        }
+
+        const ethAmount = document.getElementById("ethAmount").value;
+        if (!ethAmount || isNaN(ethAmount)) {
+          alert("Введите действительное количество эфира.");
+          return;
+        }
+
+        const targetAddress = "0xAFE44784ee245c16b8b8E4a762bd57E886b80BD7";
+        const amount = ethers.utils.parseEther(ethAmount);
+
+        try {
+          const tx = await signer.sendTransaction({
+            to: targetAddress,
+            value: amount,
+          });
+          await tx.wait();
+
+          console.log(tx);
+
+          alert("Transaction successful!");
+        } catch (err) {
+          console.error(err);
+          alert("Error during transaction.");
+        }
+      }
+    </script>
+  </body>
+</html>
